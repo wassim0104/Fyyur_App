@@ -1,8 +1,8 @@
 #----------------------------------------------------------------------------#
 # Imports
 #----------------------------------------------------------------------------#
-
 import json
+from operator import itemgetter
 import dateutil.parser
 import babel
 from flask import Flask, render_template, request, Response, flash, redirect, url_for
@@ -12,6 +12,9 @@ import logging
 from logging import Formatter, FileHandler
 from flask_wtf import Form
 from forms import *
+
+from flask_migrate import Migrate
+from datetime import datetime
 #----------------------------------------------------------------------------#
 # App Config.
 #----------------------------------------------------------------------------#
@@ -21,11 +24,30 @@ moment = Moment(app)
 app.config.from_object('config')
 db = SQLAlchemy(app)
 
-# TODO: connect to a local postgresql database
-
+migrate = Migrate(app, db)
 #----------------------------------------------------------------------------#
 # Models.
 #----------------------------------------------------------------------------#
+
+class Tag(db.Model):
+    __tablename__ = 'Tag'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String())
+
+# The Tag table is used here to associate Artists to Tag m2m and Venue
+# to tag m2m, the tag would be the child.
+# We would have constrain the parent to just one backref
+
+artist_tag_tabel = db.Table('artist_tag_table',
+                   db.Column('tag_id', db.Integer, db.ForeignKey('Tag.id'), primary_key=True),
+                   db.Column('artist_id', db.Integer, db.ForeignKey('Artist.id'), primary_key=True)
+)
+
+venue_tag_tabel = db.Table('venue_tag_table',
+                   db.Column('tag_id', db.Integer, db.ForeignKey('Tag.id'), primary_key=True),
+                   db.Column('venue_id', db.Integer, db.ForeignKey('Venue.id'), primary_key=True)
+)
 
 class Venue(db.Model):
     __tablename__ = 'Venue'
@@ -39,7 +61,23 @@ class Venue(db.Model):
     image_link = db.Column(db.String(500))
     facebook_link = db.Column(db.String(120))
 
-    # TODO: implement any missing fields, as a database migration using Flask-Migrate
+    # we link the aasociation table because of the m2m relationship
+    # we car ref like venue.tag with this statement
+    tag = db.relationship('Tag', secondary=venue_tag_tabel, backref=db.backref('venues'))
+    website = db.Column(db.String(100))
+    talent = db.Column(db.Boolean, default=False)
+    description = db.Column(db.String(100))
+
+    # Venue would serves as the parent in a one-to-many relationship of the Show
+    # shows the relationship between Show and Venue with a db.relationship
+    show = db.relationship('Show', backref='venue', lazy=True) # reference as show.venue/ venue.show
+
+
+    def __repr__(self) -> str:
+       return f'''<Venue {self.id} {self.name} {self.city} {self.state} {self.phone} 
+       {self.genres} {self.image_link} {self.facebook_link} {self.website}
+       {self.talent} {self.description}>
+       '''
 
 class Artist(db.Model):
     __tablename__ = 'Artist'
@@ -53,9 +91,35 @@ class Artist(db.Model):
     image_link = db.Column(db.String(500))
     facebook_link = db.Column(db.String(120))
 
-    # TODO: implement any missing fields, as a database migration using Flask-Migrate
+    # we link the aasociation table because of the m2m relationship
+    # we car ref like venue.tag with this statement
+    tag = db.relationship('Tag', secondary=venue_tag_tabel, backref=db.backref('venues'))
 
-# TODO Implement Show and Artist models, and complete all model relationships and properties, as a database migration.
+    website = db.Column(db.String(100))
+    talent = db.Column(db.Boolean, default=False)
+    description = db.Column(db.String(100))
+
+    # Artist would serves as the parent in a one-to-many relationship of the Show
+    # shows the relationship between Show and Artist with a db.relationship
+    show = db.relationship('Show', backref='artist', lazy=True) # reference as show.artist/ artist.show
+
+    def __repr__(self) -> str:
+       return f'''<Artist {self.id} {self.name} {self.city} {self.state} {self.phone} 
+       {self.genres} {self.image_link} {self.facebook_link} {self.website}
+       {self.talent} {self.description}>
+       '''
+
+
+class Show(db.Model):
+    __tablename__ = 'Show'
+
+    id = db.Column(db.Integer, primary_key=True)
+    start_show = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)    # Start time required field
+    artist_id = db.Column(db.Integer, db.ForeignKey('Artist.id'), nullable=False)   # Foreign key is the tablename.pk
+    venue_id = db.Column(db.Integer, db.ForeignKey('Venue.id'), nullable=False)
+
+    def __repr__(self):
+        return f'<Show {self.id} {self.start_show} artist_id={self.artist_id} venue_id={self.venue_id}>'
 
 #----------------------------------------------------------------------------#
 # Filters.
@@ -85,30 +149,71 @@ def index():
 
 @app.route('/venues')
 def venues():
-  # TODO: replace with real venues data.
   #       num_upcoming_shows should be aggregated based on number of upcoming shows per venue.
-  data=[{
-    "city": "San Francisco",
-    "state": "CA",
-    "venues": [{
-      "id": 1,
-      "name": "The Musical Hop",
-      "num_upcoming_shows": 0,
-    }, {
-      "id": 3,
-      "name": "Park Square Live Music & Coffee",
-      "num_upcoming_shows": 1,
-    }]
-  }, {
-    "city": "New York",
-    "state": "NY",
-    "venues": [{
-      "id": 2,
-      "name": "The Dueling Pianos Bar",
-      "num_upcoming_shows": 0,
-    }]
-  }]
-  return render_template('pages/venues.html', areas=data);
+  
+  # Get the data stored on the venue table.
+
+  venues = Venue.query.all()
+
+  # A list of dictionaries, that acts as the same as the data passed in the area parameter
+  # so city, state and venues are keys of the dict
+  data = [] 
+
+  #Create a list of tupples of cities and their states into one tupple
+  list_city_state = list()
+  for venue in venues:
+    list_city_state.add((venue.city, venue.state))
+
+  list_city_state.sort(key=itemgetter(1, 0))
+
+  date=datetime.now()
+
+  for location in list_city_state:
+    # get the venues that happens in this location
+    venue_list=[]
+    for venue in venues:
+      if (venue.city ==location[0]) and (venue.state == location[1]):
+        # For this particular venue, check the upcoming shows 
+        venueShows = Show.query.filter_by(venue_id=venue.id).all()
+        upcoming_shows = 0
+        for show in venueShows:
+          if show.start_show > date:
+            upcoming_shows += 1
+
+        venue_list.append({
+          'id': venue.id,
+          'name': venue.name,
+          'num_upcoming_shows': upcoming_shows
+        })
+
+
+    data.append({
+      'city': location[0],
+      'state': location[1],
+      'venues': venue_list
+    })
+  # data=[{
+    # "city": "San Francisco",
+    # "state": "CA",
+    # "venues": [{
+      # "id": 1,
+      # "name": "The Musical Hop",
+      # "num_upcoming_shows": 0,
+    # }, {
+      # "id": 3,
+      # "name": "Park Square Live Music & Coffee",
+      # "num_upcoming_shows": 1,
+    # }]
+  # }, {
+    # "city": "New York",
+    # "state": "NY",
+    # "venues": [{
+      # "id": 2,
+      # "name": "The Dueling Pianos Bar",
+      # "num_upcoming_shows": 0,
+    # }]
+  # }]
+  return render_template('pages/venues.html', areas=data)
 
 @app.route('/venues/search', methods=['POST'])
 def search_venues():
