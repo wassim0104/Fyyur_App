@@ -67,7 +67,7 @@ class Venue(db.Model):
 
     # we link the aasociation table because of the m2m relationship
     # we car ref like venue.tag with this statement
-    tag = db.relationship('Tag', secondary=venue_tag_tabel, backref=db.backref('venue'))
+    genres = db.relationship('Tag', secondary=venue_tag_tabel, backref=db.backref('venue'))
     website = db.Column(db.String(100))
     talent = db.Column(db.Boolean, default=False)
     description = db.Column(db.String(100))
@@ -91,13 +91,12 @@ class Artist(db.Model):
     city = db.Column(db.String(120))
     state = db.Column(db.String(120))
     phone = db.Column(db.String(120))
-    genres = db.Column(db.String(120))
     image_link = db.Column(db.String(500))
     facebook_link = db.Column(db.String(120))
 
     # we link the aasociation table because of the m2m relationship
     # we car ref like venue.tag with this statement
-    tag = db.relationship('Tag', secondary=artist_tag_tabel, backref=db.backref('artist'))
+    genres = db.relationship('Tag', secondary=artist_tag_tabel, backref=db.backref('artist'))
 
     website = db.Column(db.String(100))
     talent = db.Column(db.Boolean, default=False)
@@ -274,32 +273,32 @@ def show_venue(venue_id):
         past_shows.append({
           "artist_id": s.artist_id,
           "artist_name": s.artist.name,
-          "artist_image_link": s.artist.image_ling,
-          "start_time": s.start_show
+          "artist_image_link": s.artist.image_link,
+          "start_time": format_datetime(str(s.start_show))
         })
       else:
         number_upcoming_shows += 1
         upcoming_shows.append({
           "artist_id": s.artist_id,
           "artist_name": s.artist.name,
-          "artist_image_link": s.artist.image_ling,
-          "start_time": s.start_show
+          "artist_image_link": s.artist.image_link,
+          "start_time": format_datetime(str(s.start_show))
         })
 
 
       data = {
         "id": venue_id,
-        "name": v.id,
+        "name": venue.id,
         "genres": genres,
-        "address": v.address,
-        "city": v.city,
-        "state": v.state,
-        "phone": v.phone,
-        "website": v.website,
-        "facebook_link": v.facebook_link,
-        "seeking_talent": v.talent,
-        "seeking_description": v.description,
-        "image_link": v.image_link,
+        "address": venue.address,
+        "city": venue.city,
+        "state": venue.state,
+        "phone": venue.phone,
+        "website": venue.website,
+        "facebook_link": venue.facebook_link,
+        "seeking_talent": venue.talent,
+        "seeking_description": venue.description,
+        "image_link": venue.image_link,
         "past_shows": past_shows,
         "upcoming_shows": upcoming_shows,
         "past_shows_count": number_past_shows,
